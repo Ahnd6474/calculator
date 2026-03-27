@@ -422,11 +422,11 @@ function stripTrailingZeros(text: string): string {
   return text
     .replace(/(\.\d*?[1-9])0+(e[+-]?\d+)?$/i, "$1$2")
     .replace(/\.0+(e[+-]?\d+)?$/i, "$1")
-    .replace(/e([+-]?\d+)$/i, (_, exponent: string) => formatExponent(Number(exponent)).slice(1));
+    .replace(/e([+-]?\d+)$/i, (_, exponent: string) => formatExponent(Number(exponent)));
 }
 
 function normalizeExponent(text: string): string {
-  return text.replace(/e([+-]?\d+)$/i, (_, exponent: string) => formatExponent(Number(exponent)).slice(1));
+  return text.replace(/e([+-]?\d+)$/i, (_, exponent: string) => formatExponent(Number(exponent)));
 }
 
 function formatExponent(exponent: number): string {

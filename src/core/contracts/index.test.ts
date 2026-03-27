@@ -68,10 +68,17 @@ function createNoopSolverService(): SolverService {
       return {
         ok: true,
         value: {
+          method: request.method,
+          canonicalExpression: request.expression,
           root: request.initialGuess ?? 0,
+          formattedRoot: String(request.initialGuess ?? 0),
           residual: 0,
+          formattedResidual: "0",
           iterations: 0,
           converged: true,
+          tolerance: request.settings.numeric.solverTolerance,
+          maxIterations: request.settings.numeric.maxIterations,
+          terminationReason: "residual_tolerance",
           history: []
         },
         issues: [],

@@ -1,0 +1,164 @@
+.solver-workbench {
+  display: grid;
+  gap: 20px;
+}
+
+.solver-toolbar,
+.solver-pane,
+.solver-result-panel {
+  border-radius: 20px;
+  border: 1px solid rgba(180, 194, 214, 0.12);
+  background: rgba(7, 15, 27, 0.72);
+  padding: 20px;
+}
+
+.solver-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.solver-toolbar h3,
+.solver-pane h4,
+.solver-result-panel h4 {
+  margin: 0 0 8px;
+}
+
+.solver-caption {
+  margin: 0;
+  color: #a9b8cb;
+}
+
+.solver-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.solver-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: #9fb4ce;
+  font-size: 0.84rem;
+}
+
+.solver-meta-strip span {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(147, 177, 212, 0.18);
+  background: rgba(11, 20, 34, 0.62);
+}
+
+.solver-pane-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.9fr);
+  gap: 18px;
+}
+
+.solver-note-pane {
+  display: grid;
+  align-content: center;
+}
+
+.solver-result-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.solver-pane-header,
+.solver-history-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.solver-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.solver-summary-grid div {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(147, 177, 212, 0.16);
+  background: rgba(11, 20, 34, 0.62);
+}
+
+.solver-summary-grid dt {
+  margin-bottom: 6px;
+  color: #8ea4bf;
+  font-size: 0.82rem;
+}
+
+.solver-summary-grid dd {
+  margin: 0;
+  font-family: "IBM Plex Mono", "Consolas", monospace;
+  word-break: break-word;
+}
+
+.solver-history {
+  display: grid;
+  gap: 12px;
+}
+
+.solver-history-header span {
+  color: #8ea4bf;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.solver-history-table {
+  display: grid;
+  gap: 8px;
+}
+
+.solver-history-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(147, 177, 212, 0.16);
+  background: rgba(11, 20, 34, 0.62);
+  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-size: 0.9rem;
+}
+
+.solver-history-head {
+  color: #8ea4bf;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 960px) {
+  .solver-pane-grid,
+  .solver-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .solver-toolbar,
+  .solver-pane-header,
+  .solver-history-header {
+    flex-direction: column;
+  }
+
+  .solver-toolbar-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+}
+
+@media (max-width: 720px) {
+  .solver-history-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -123,13 +123,31 @@ export interface SolverIteration {
   iteration: number;
   estimate: number;
   residual: number;
+  step?: number;
+  derivative?: number;
+  lowerBound?: number;
+  upperBound?: number;
 }
 
+export type SolverTerminationReason =
+  | "residual_tolerance"
+  | "interval_tolerance"
+  | "exact_endpoint"
+  | "zero_derivative"
+  | "max_iterations";
+
 export interface SolverResult {
+  method: SolverMethod;
+  canonicalExpression: string;
   root: number;
+  formattedRoot: string;
   residual: number;
+  formattedResidual: string;
   iterations: number;
   converged: boolean;
+  tolerance: number;
+  maxIterations: number;
+  terminationReason: SolverTerminationReason;
   history: SolverIteration[];
 }
 

@@ -1,12 +1,23 @@
-import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction
+} from "react";
 import type {
   CalculatorSettings,
   ExpressionResult,
   ResultEnvelope,
+  SolverResult,
   WorkspaceState,
   WorkspaceToolId
 } from "@core/contracts";
 import { MatrixWorkbench } from "../features/matrix/MatrixWorkbench";
+import { SolverWorkbench } from "../features/solver/SolverWorkbench";
+import { summarizeSolver } from "../features/solver/model";
 import {
   HISTORY_SCHEMA_VERSION,
   MEMORY_SCHEMA_VERSION,
@@ -37,6 +48,7 @@ const toolTitles: Record<WorkspaceToolId, string> = {
 };
 
 type CalculationOutcome = ResultEnvelope<ExpressionResult> | null;
+type SolverOutcome = ResultEnvelope<SolverResult> | null;
 
 function formatTimestamp(value: string | null, locale: string): string {
   if (!value) {
@@ -118,6 +130,21 @@ function buildCalculationPresentation(
     detail: `${calculation.value.canonicalExpression} | Approximation ${formatApproximation(calculation.value.approximateValue)}`,
     value: calculation.value.formattedValue,
     issues: calculation.issues
+  };
+}
+
+function buildSolverPresentation(
+  workspace: WorkspaceState,
+  result: SolverOutcome
+): WorkspacePresentation {
+  const summary = summarizeSolver(workspace.solver, result);
+
+  return {
+    tool: "solver",
+    title: summary.title,
+    detail: summary.detail,
+    value: summary.value,
+    issues: summary.issues
   };
 }
 
@@ -210,7 +237,8 @@ function renderToolDraft(
   settings: CalculatorSettings,
   workspace: WorkspaceState,
   calculation: CalculationOutcome,
-  updateWorkspace: (recipe: (current: WorkspaceState) => WorkspaceState) => void
+  updateWorkspace: (recipe: (current: WorkspaceState) => WorkspaceState) => void,
+  updateSolverCalculation: Dispatch<SetStateAction<SolverOutcome>>
 ) {
   switch (workspace.activeTool) {
     case "calculate":
@@ -230,94 +258,17 @@ function renderToolDraft(
       return <MatrixWorkbench settings={settings} initialDraft={workspace.matrix} />;
     case "solver":
       return (
-        <section className="panel draft-panel">
-          <header className="panel-header">
-            <h2>Solver Workspace</h2>
-            <span>method + guesses</span>
-          </header>
-          <div className="form-grid">
-            <label className="field field-wide">
-              <span>Expression</span>
-              <textarea
-                rows={4}
-                value={workspace.solver.expression}
-                onChange={(event) =>
-                  updateWorkspace((current) => ({
-                    ...current,
-                    solver: {
-                      ...current.solver,
-                      expression: event.target.value
-                    }
-                  }))
-                }
-                placeholder="cos(x) - x"
-              />
-            </label>
-            <label className="field">
-              <span>Method</span>
-              <select
-                value={workspace.solver.method}
-                onChange={(event) =>
-                  updateWorkspace((current) => ({
-                    ...current,
-                    solver: {
-                      ...current.solver,
-                      method: event.target.value === "bisection" ? "bisection" : "newton"
-                    }
-                  }))
-                }
-              >
-                <option value="newton">Newton-Raphson</option>
-                <option value="bisection">Bisection</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Initial Guess</span>
-              <input
-                value={workspace.solver.initialGuess}
-                onChange={(event) =>
-                  updateWorkspace((current) => ({
-                    ...current,
-                    solver: {
-                      ...current.solver,
-                      initialGuess: event.target.value
-                    }
-                  }))
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Bracket Lower</span>
-              <input
-                value={workspace.solver.bracketLower}
-                onChange={(event) =>
-                  updateWorkspace((current) => ({
-                    ...current,
-                    solver: {
-                      ...current.solver,
-                      bracketLower: event.target.value
-                    }
-                  }))
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Bracket Upper</span>
-              <input
-                value={workspace.solver.bracketUpper}
-                onChange={(event) =>
-                  updateWorkspace((current) => ({
-                    ...current,
-                    solver: {
-                      ...current.solver,
-                      bracketUpper: event.target.value
-                    }
-                  }))
-                }
-              />
-            </label>
-          </div>
-        </section>
+        <SolverWorkbench
+          settings={settings}
+          draft={workspace.solver}
+          onDraftChange={(recipe) =>
+            updateWorkspace((current) => ({
+              ...current,
+              solver: recipe(current.solver)
+            }))
+          }
+          onResultChange={updateSolverCalculation}
+        />
       );
     case "numerical":
       return (
@@ -432,12 +383,17 @@ export function App() {
     () => snapshot.memory.payload.registers[0]?.id ?? createDefaultMemoryRegisters()[0]!.id
   );
   const [calculation, setCalculation] = useState<CalculationOutcome>(null);
+  const [solverCalculation, setSolverCalculation] = useState<SolverOutcome>(null);
   const deferredExpression = useDeferredValue(workspace.expressionInput);
   const deferredSettings = useDeferredValue(settings);
 
   const activeTool = workspace.activeTool;
   const presentation =
-    activeTool === "calculate" ? buildCalculationPresentation(workspace, calculation) : summarizeWorkspace(workspace);
+    activeTool === "calculate"
+      ? buildCalculationPresentation(workspace, calculation)
+      : activeTool === "solver"
+        ? buildSolverPresentation(workspace, solverCalculation)
+        : summarizeWorkspace(workspace);
   const selectedRegister =
     memoryRegisters.find((register) => register.id === selectedRegisterId) ?? memoryRegisters[0] ?? null;
 
@@ -603,7 +559,9 @@ export function App() {
       </section>
 
       <section className="workspace-grid">
-        <div className="workspace-main">{renderToolDraft(settings, workspace, calculation, updateWorkspace)}</div>
+        <div className="workspace-main">
+          {renderToolDraft(settings, workspace, calculation, updateWorkspace, setSolverCalculation)}
+        </div>
         <aside className="workspace-side">
           <section className="panel settings-panel">
             <header className="panel-header">
@@ -809,7 +767,12 @@ export function App() {
             { label: "Precision", value: `${settings.numeric.displayPrecision} digits` },
             {
               label: "Elapsed",
-              value: activeTool === "calculate" ? formatElapsedMs(calculation?.metadata.elapsedMs) : "n/a"
+              value:
+                activeTool === "calculate"
+                  ? formatElapsedMs(calculation?.metadata.elapsedMs)
+                  : activeTool === "solver"
+                    ? formatElapsedMs(solverCalculation?.metadata.elapsedMs)
+                    : "n/a"
             }
           ]}
         >
