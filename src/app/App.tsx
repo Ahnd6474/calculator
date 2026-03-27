@@ -2,11 +2,11 @@ import { startTransition, useDeferredValue, useEffect, useMemo, useState } from 
 import type {
   CalculatorSettings,
   ExpressionResult,
-  MatrixData,
   ResultEnvelope,
   WorkspaceState,
   WorkspaceToolId
 } from "@core/contracts";
+import { MatrixWorkbench } from "../features/matrix/MatrixWorkbench";
 import {
   HISTORY_SCHEMA_VERSION,
   MEMORY_SCHEMA_VERSION,
@@ -23,7 +23,6 @@ import {
   SETTINGS_LIMITS
 } from "../features/settings/model";
 import { createCalculationService } from "../services/calculate";
-import { createDefaultMatrixData, resizeMatrix, updateMatrixCell } from "./workspaceDrafts";
 import { buildModeMetadata, summarizeWorkspace, type WorkspacePresentation } from "./workspacePreview";
 import "../features/calculate/calculate.css";
 
@@ -65,10 +64,6 @@ function clampNumberField(value: number, minimum: number, maximum: number): numb
   }
 
   return Math.min(maximum, Math.max(minimum, value));
-}
-
-function buildMatrix(matrix?: MatrixData): MatrixData {
-  return matrix ?? createDefaultMatrixData();
 }
 
 function formatApproximation(value: number | null): string {
@@ -124,58 +119,6 @@ function buildCalculationPresentation(
     value: calculation.value.formattedValue,
     issues: calculation.issues
   };
-}
-
-interface MatrixEditorProps {
-  label: string;
-  matrix: MatrixData;
-  onResize: (rows: number, columns: number) => void;
-  onCellChange: (rowIndex: number, columnIndex: number, value: number) => void;
-}
-
-function MatrixEditor({ label, matrix, onResize, onCellChange }: MatrixEditorProps) {
-  return (
-    <section className="matrix-card">
-      <header className="subpanel-header">
-        <h3>{label}</h3>
-        <div className="compact-row">
-          <label>
-            Rows
-            <select value={matrix.rows} onChange={(event) => onResize(Number(event.target.value), matrix.columns)}>
-              {[2, 3, 4, 5, 6].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Columns
-            <select value={matrix.columns} onChange={(event) => onResize(matrix.rows, Number(event.target.value))}>
-              {[2, 3, 4, 5, 6].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </header>
-      <div className="matrix-grid" style={{ gridTemplateColumns: `repeat(${matrix.columns}, minmax(0, 1fr))` }}>
-        {matrix.values.map((row, rowIndex) =>
-          row.map((entry, columnIndex) => (
-            <input
-              key={`${label}-${rowIndex}-${columnIndex}`}
-              type="number"
-              step="any"
-              value={entry}
-              onChange={(event) => onCellChange(rowIndex, columnIndex, Number(event.target.value))}
-            />
-          ))
-        )}
-      </div>
-    </section>
-  );
 }
 
 interface CalculateDraftProps {
@@ -264,6 +207,7 @@ function CalculateDraft({ calculation, workspace, onExpressionChange }: Calculat
 }
 
 function renderToolDraft(
+  settings: CalculatorSettings,
   workspace: WorkspaceState,
   calculation: CalculationOutcome,
   updateWorkspace: (recipe: (current: WorkspaceState) => WorkspaceState) => void
@@ -283,60 +227,7 @@ function renderToolDraft(
         />
       );
     case "matrix":
-      return (
-        <section className="panel draft-panel">
-          <header className="panel-header">
-            <h2>Matrix Workspace</h2>
-            <span>persistent draft grids</span>
-          </header>
-          <div className="matrix-layout">
-            <MatrixEditor
-              label="Left Matrix"
-              matrix={workspace.matrix.left}
-              onResize={(rows, columns) =>
-                updateWorkspace((current) => ({
-                  ...current,
-                  matrix: {
-                    ...current.matrix,
-                    left: resizeMatrix(current.matrix.left, rows, columns)
-                  }
-                }))
-              }
-              onCellChange={(rowIndex, columnIndex, value) =>
-                updateWorkspace((current) => ({
-                  ...current,
-                  matrix: {
-                    ...current.matrix,
-                    left: updateMatrixCell(current.matrix.left, rowIndex, columnIndex, value)
-                  }
-                }))
-              }
-            />
-            <MatrixEditor
-              label="Right Matrix"
-              matrix={buildMatrix(workspace.matrix.right)}
-              onResize={(rows, columns) =>
-                updateWorkspace((current) => ({
-                  ...current,
-                  matrix: {
-                    ...current.matrix,
-                    right: resizeMatrix(buildMatrix(current.matrix.right), rows, columns)
-                  }
-                }))
-              }
-              onCellChange={(rowIndex, columnIndex, value) =>
-                updateWorkspace((current) => ({
-                  ...current,
-                  matrix: {
-                    ...current.matrix,
-                    right: updateMatrixCell(buildMatrix(current.matrix.right), rowIndex, columnIndex, value)
-                  }
-                }))
-              }
-            />
-          </div>
-        </section>
-      );
+      return <MatrixWorkbench settings={settings} initialDraft={workspace.matrix} />;
     case "solver":
       return (
         <section className="panel draft-panel">
@@ -712,7 +603,7 @@ export function App() {
       </section>
 
       <section className="workspace-grid">
-        <div className="workspace-main">{renderToolDraft(workspace, calculation, updateWorkspace)}</div>
+        <div className="workspace-main">{renderToolDraft(settings, workspace, calculation, updateWorkspace)}</div>
         <aside className="workspace-side">
           <section className="panel settings-panel">
             <header className="panel-header">

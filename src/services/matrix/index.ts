@@ -1,0 +1,1 @@
+export { createMatrixService } from "./service";
