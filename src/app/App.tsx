@@ -43,7 +43,12 @@ import {
 } from "../features/settings/model";
 import { createCalculationService } from "../services/calculate";
 import { createNumericalToolsService } from "../services/numerical";
-import { buildModeMetadata, summarizeWorkspace, type WorkspacePresentation } from "./workspacePreview";
+import {
+  captureRegisterFromPresentation,
+  createHistoryEntryFromPresentation,
+  summarizeWorkspace,
+  type WorkspacePresentation
+} from "./workspacePreview";
 import "../features/calculate/calculate.css";
 
 const HISTORY_LIMIT = 24;
@@ -556,15 +561,7 @@ export function App() {
   function storeCurrentSnapshot() {
     const timestamp = new Date().toISOString();
     replaceHistory([
-      {
-        id: `history-${timestamp}`,
-        tool: presentation.tool,
-        title: presentation.title,
-        detail: presentation.detail,
-        value: presentation.value,
-        createdAt: timestamp,
-        mode: buildModeMetadata(settings)
-      },
+      createHistoryEntryFromPresentation(presentation, settings, timestamp, `history-${timestamp}`),
       ...historyEntries
     ].slice(0, HISTORY_LIMIT));
   }
@@ -578,14 +575,7 @@ export function App() {
     replaceMemory(
       memoryRegisters.map((register) =>
         register.id === selectedRegister.id
-          ? {
-              ...register,
-              value: presentation.value,
-              detail: presentation.detail,
-              sourceTool: presentation.tool,
-              updatedAt: timestamp,
-              mode: buildModeMetadata(settings)
-            }
+          ? captureRegisterFromPresentation(register, presentation, settings, timestamp)
           : register
       )
     );

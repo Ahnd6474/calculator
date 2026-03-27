@@ -69,14 +69,12 @@ export function summarizeWorkspace(workspace: WorkspaceState): WorkspacePresenta
   }
 }
 
-export function createHistoryEntry(
-  workspace: WorkspaceState,
+export function createHistoryEntryFromPresentation(
+  presentation: WorkspacePresentation,
   settings: CalculatorSettings,
   timestamp: string,
   id: string
 ): HistoryEntry {
-  const presentation = summarizeWorkspace(workspace);
-
   return {
     id,
     tool: presentation.tool,
@@ -88,14 +86,21 @@ export function createHistoryEntry(
   };
 }
 
-export function captureRegister(
-  register: MemoryRegister,
+export function createHistoryEntry(
   workspace: WorkspaceState,
+  settings: CalculatorSettings,
+  timestamp: string,
+  id: string
+): HistoryEntry {
+  return createHistoryEntryFromPresentation(summarizeWorkspace(workspace), settings, timestamp, id);
+}
+
+export function captureRegisterFromPresentation(
+  register: MemoryRegister,
+  presentation: WorkspacePresentation,
   settings: CalculatorSettings,
   timestamp: string
 ): MemoryRegister {
-  const presentation = summarizeWorkspace(workspace);
-
   return {
     ...register,
     value: presentation.value,
@@ -104,4 +109,13 @@ export function captureRegister(
     updatedAt: timestamp,
     mode: buildModeMetadata(settings)
   };
+}
+
+export function captureRegister(
+  register: MemoryRegister,
+  workspace: WorkspaceState,
+  settings: CalculatorSettings,
+  timestamp: string
+): MemoryRegister {
+  return captureRegisterFromPresentation(register, summarizeWorkspace(workspace), settings, timestamp);
 }
