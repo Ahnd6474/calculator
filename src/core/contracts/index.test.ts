@@ -97,6 +97,8 @@ function createNoopNumericalService(): NumericalToolsService {
         ok: true,
         value: {
           tool: request.tool,
+          method: request.tool === "integrate" ? "simpson" : "central",
+          canonicalExpression: request.expression,
           formattedValue: "0"
         },
         issues: [],

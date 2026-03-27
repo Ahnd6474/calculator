@@ -9,7 +9,11 @@ import {
 } from "react";
 import type {
   CalculatorSettings,
+  ComputationIssue,
   ExpressionResult,
+  NumericalDraft,
+  NumericalRequest,
+  NumericalResult,
   ResultEnvelope,
   SolverResult,
   WorkspaceState,
@@ -18,6 +22,7 @@ import type {
 import { MatrixWorkbench } from "../features/matrix/MatrixWorkbench";
 import { SolverWorkbench } from "../features/solver/SolverWorkbench";
 import { summarizeSolver } from "../features/solver/model";
+import { NumericalToolsWorkspace } from "../features/numerical-tools/NumericalToolsWorkspace";
 import {
   HISTORY_SCHEMA_VERSION,
   MEMORY_SCHEMA_VERSION,
@@ -34,11 +39,13 @@ import {
   SETTINGS_LIMITS
 } from "../features/settings/model";
 import { createCalculationService } from "../services/calculate";
+import { createNumericalToolsService } from "../services/numerical";
 import { buildModeMetadata, summarizeWorkspace, type WorkspacePresentation } from "./workspacePreview";
 import "../features/calculate/calculate.css";
 
 const HISTORY_LIMIT = 24;
 const calculationService = createCalculationService();
+const numericalToolsService = createNumericalToolsService();
 
 const toolTitles: Record<WorkspaceToolId, string> = {
   calculate: "Expression Engine",
@@ -49,6 +56,7 @@ const toolTitles: Record<WorkspaceToolId, string> = {
 
 type CalculationOutcome = ResultEnvelope<ExpressionResult> | null;
 type SolverOutcome = ResultEnvelope<SolverResult> | null;
+type NumericalOutcome = ResultEnvelope<NumericalResult> | null;
 
 function formatTimestamp(value: string | null, locale: string): string {
   if (!value) {
@@ -148,6 +156,46 @@ function buildSolverPresentation(
   };
 }
 
+function buildNumericalPresentation(
+  workspace: WorkspaceState,
+  result: NumericalOutcome
+): WorkspacePresentation {
+  const supportedTool = workspace.numerical.tool === "integrate" ? "integrate" : "differentiate";
+  const expression = workspace.numerical.expression.trim();
+
+  if (!expression) {
+    return summarizeWorkspace(workspace);
+  }
+
+  if (!result) {
+    return {
+      tool: "numerical",
+      title: "Numerical Analysis",
+      detail: expression,
+      value: "Calculating",
+      issues: []
+    };
+  }
+
+  if (!result.ok) {
+    return {
+      tool: "numerical",
+      title: "Numerical Diagnostic",
+      detail: expression,
+      value: "Error",
+      issues: result.issues
+    };
+  }
+
+  return {
+    tool: "numerical",
+    title: supportedTool === "integrate" ? "Integral Estimate" : "Derivative Estimate",
+    detail: `${result.value.canonicalExpression} | ${labelNumericalMethod(result.value.method)}`,
+    value: result.value.formattedValue,
+    issues: result.issues
+  };
+}
+
 interface CalculateDraftProps {
   calculation: CalculationOutcome;
   workspace: WorkspaceState;
@@ -237,6 +285,7 @@ function renderToolDraft(
   settings: CalculatorSettings,
   workspace: WorkspaceState,
   calculation: CalculationOutcome,
+  numerical: NumericalOutcome,
   updateWorkspace: (recipe: (current: WorkspaceState) => WorkspaceState) => void,
   updateSolverCalculation: Dispatch<SetStateAction<SolverOutcome>>
 ) {
@@ -272,100 +321,17 @@ function renderToolDraft(
       );
     case "numerical":
       return (
-        <section className="panel draft-panel">
-          <header className="panel-header">
-            <h2>Numerical Workspace</h2>
-            <span>tool + interval draft</span>
-          </header>
-          <div className="form-grid">
-            <label className="field field-wide">
-              <span>Expression</span>
-              <textarea
-                rows={4}
-                value={workspace.numerical.expression}
-                onChange={(event) =>
-                  updateWorkspace((current) => ({
-                    ...current,
-                    numerical: {
-                      ...current.numerical,
-                      expression: event.target.value
-                    }
-                  }))
-                }
-                placeholder="exp(-x^2)"
-              />
-            </label>
-            <label className="field">
-              <span>Tool</span>
-              <select
-                value={workspace.numerical.tool}
-                onChange={(event) =>
-                  updateWorkspace((current) => ({
-                    ...current,
-                    numerical: {
-                      ...current.numerical,
-                      tool:
-                        event.target.value === "integrate"
-                          ? "integrate"
-                          : event.target.value === "sample"
-                            ? "sample"
-                            : "differentiate"
-                    }
-                  }))
-                }
-              >
-                <option value="differentiate">Differentiate</option>
-                <option value="integrate">Integrate</option>
-                <option value="sample">Sample</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Point</span>
-              <input
-                value={workspace.numerical.point}
-                onChange={(event) =>
-                  updateWorkspace((current) => ({
-                    ...current,
-                    numerical: {
-                      ...current.numerical,
-                      point: event.target.value
-                    }
-                  }))
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Interval Start</span>
-              <input
-                value={workspace.numerical.intervalStart}
-                onChange={(event) =>
-                  updateWorkspace((current) => ({
-                    ...current,
-                    numerical: {
-                      ...current.numerical,
-                      intervalStart: event.target.value
-                    }
-                  }))
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Interval End</span>
-              <input
-                value={workspace.numerical.intervalEnd}
-                onChange={(event) =>
-                  updateWorkspace((current) => ({
-                    ...current,
-                    numerical: {
-                      ...current.numerical,
-                      intervalEnd: event.target.value
-                    }
-                  }))
-                }
-              />
-            </label>
-          </div>
-        </section>
+        <NumericalToolsWorkspace
+          draft={workspace.numerical}
+          result={numerical}
+          settings={settings}
+          onDraftChange={(recipe) =>
+            updateWorkspace((current) => ({
+              ...current,
+              numerical: recipe(current.numerical)
+            }))
+          }
+        />
       );
   }
 }
@@ -384,7 +350,9 @@ export function App() {
   );
   const [calculation, setCalculation] = useState<CalculationOutcome>(null);
   const [solverCalculation, setSolverCalculation] = useState<SolverOutcome>(null);
+  const [numerical, setNumerical] = useState<NumericalOutcome>(null);
   const deferredExpression = useDeferredValue(workspace.expressionInput);
+  const deferredNumericalDraft = useDeferredValue(workspace.numerical);
   const deferredSettings = useDeferredValue(settings);
 
   const activeTool = workspace.activeTool;
@@ -393,6 +361,8 @@ export function App() {
       ? buildCalculationPresentation(workspace, calculation)
       : activeTool === "solver"
         ? buildSolverPresentation(workspace, solverCalculation)
+      : activeTool === "numerical"
+        ? buildNumericalPresentation(workspace, numerical)
         : summarizeWorkspace(workspace);
   const selectedRegister =
     memoryRegisters.find((register) => register.id === selectedRegisterId) ?? memoryRegisters[0] ?? null;
@@ -434,6 +404,49 @@ export function App() {
       cancelled = true;
     };
   }, [activeTool, deferredExpression, deferredSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (activeTool !== "numerical") {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!deferredNumericalDraft.expression.trim()) {
+      startTransition(() => {
+        setNumerical(null);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const builtRequest = buildNumericalRequest(deferredNumericalDraft, deferredSettings);
+    if (!builtRequest.ok) {
+      startTransition(() => {
+        setNumerical(failEnvelope(deferredSettings, builtRequest.issues));
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    Promise.resolve(numericalToolsService.run(builtRequest.value)).then((result) => {
+      if (cancelled) {
+        return;
+      }
+
+      startTransition(() => {
+        setNumerical(result);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTool, deferredNumericalDraft, deferredSettings]);
 
   function updateSettings(recipe: (current: CalculatorSettings) => CalculatorSettings) {
     setSettingsState((current) => {
@@ -560,7 +573,7 @@ export function App() {
 
       <section className="workspace-grid">
         <div className="workspace-main">
-          {renderToolDraft(settings, workspace, calculation, updateWorkspace, setSolverCalculation)}
+          {renderToolDraft(settings, workspace, calculation, numerical, updateWorkspace, setSolverCalculation)}
         </div>
         <aside className="workspace-side">
           <section className="panel settings-panel">
@@ -772,6 +785,8 @@ export function App() {
                   ? formatElapsedMs(calculation?.metadata.elapsedMs)
                   : activeTool === "solver"
                     ? formatElapsedMs(solverCalculation?.metadata.elapsedMs)
+                  : activeTool === "numerical"
+                    ? formatElapsedMs(numerical?.metadata.elapsedMs)
                     : "n/a"
             }
           ]}
@@ -876,4 +891,92 @@ export function App() {
       </section>
     </main>
   );
+}
+
+function buildNumericalRequest(
+  draft: NumericalDraft,
+  settings: CalculatorSettings
+): { ok: true; value: NumericalRequest } | { ok: false; issues: ComputationIssue[] } {
+  const tool = draft.tool === "integrate" ? "integrate" : "differentiate";
+
+  if (tool === "differentiate") {
+    const point = Number(draft.point);
+    if (!Number.isFinite(point)) {
+      return {
+        ok: false,
+        issues: [
+          {
+            code: "numerical.invalid_point",
+            message: "Enter a finite point for differentiation.",
+            severity: "error",
+            field: "point"
+          }
+        ]
+      };
+    }
+
+    return {
+      ok: true,
+      value: {
+        tool,
+        expression: draft.expression,
+        settings,
+        point,
+        differentiationMethod: draft.differentiationMethod
+      }
+    };
+  }
+
+  const start = Number(draft.intervalStart);
+  const end = Number(draft.intervalEnd);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return {
+      ok: false,
+      issues: [
+        {
+          code: "numerical.invalid_interval",
+          message: "Enter finite interval bounds for integration.",
+          severity: "error",
+          field: "interval"
+        }
+      ]
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      tool,
+      expression: draft.expression,
+      settings,
+      interval: [start, end],
+      integrationMethod: draft.integrationMethod
+    }
+  };
+}
+
+function failEnvelope<T>(
+  settings: CalculatorSettings,
+  issues: ComputationIssue[]
+): ResultEnvelope<T> {
+  return {
+    ok: false,
+    issues,
+    metadata: {
+      backend: settings.numeric.backend
+    }
+  };
+}
+
+function labelNumericalMethod(method: NumericalResult["method"]): string {
+  switch (method) {
+    case "central":
+      return "Central difference";
+    case "five-point":
+      return "Five-point stencil";
+    case "trapezoidal":
+      return "Trapezoidal";
+    case "simpson":
+      return "Simpson";
+  }
 }

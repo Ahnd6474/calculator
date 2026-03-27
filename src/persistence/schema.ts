@@ -161,6 +161,10 @@ function isWorkspaceState(value: unknown): value is WorkspaceState {
     (value.numerical.tool === "differentiate" ||
       value.numerical.tool === "integrate" ||
       value.numerical.tool === "sample") &&
+    (value.numerical.differentiationMethod === "central" ||
+      value.numerical.differentiationMethod === "five-point") &&
+    (value.numerical.integrationMethod === "trapezoidal" ||
+      value.numerical.integrationMethod === "simpson") &&
     typeof value.numerical.point === "string" &&
     typeof value.numerical.intervalStart === "string" &&
     typeof value.numerical.intervalEnd === "string"

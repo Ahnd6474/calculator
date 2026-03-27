@@ -110,6 +110,8 @@ export interface LinearSystemResult {
 }
 
 export type SolverMethod = "newton" | "bisection";
+export type DifferentiationMethod = "central" | "five-point";
+export type IntegrationMethod = "trapezoidal" | "simpson";
 
 export interface SolverRequest {
   method: SolverMethod;
@@ -159,15 +161,21 @@ export interface NumericalRequest {
   settings: CalculatorSettings;
   point?: number;
   interval?: [number, number];
+  differentiationMethod?: DifferentiationMethod;
+  integrationMethod?: IntegrationMethod;
   sampleCount?: number;
 }
 
 export interface NumericalResult {
   tool: NumericalTool;
+  method: DifferentiationMethod | IntegrationMethod;
+  canonicalExpression: string;
   formattedValue: string;
   approximateValue?: number;
   samples?: Array<[number, number]>;
   errorEstimate?: number;
+  sampleCount?: number;
+  stepSize?: number;
 }
 
 export interface MatrixDraft {
@@ -186,6 +194,8 @@ export interface SolverDraft {
 export interface NumericalDraft {
   expression: string;
   tool: NumericalTool;
+  differentiationMethod: DifferentiationMethod;
+  integrationMethod: IntegrationMethod;
   point: string;
   intervalStart: string;
   intervalEnd: string;

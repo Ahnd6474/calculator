@@ -66,6 +66,8 @@ export function createDefaultWorkspaceState(): WorkspaceState {
     numerical: {
       expression: "",
       tool: "differentiate",
+      differentiationMethod: "central",
+      integrationMethod: "simpson",
       point: "0",
       intervalStart: "0",
       intervalEnd: "1"
@@ -95,6 +97,10 @@ export function sanitizeWorkspaceState(workspace: WorkspaceState): WorkspaceStat
     numerical: {
       expression: workspace.numerical.expression,
       tool: workspace.numerical.tool,
+      differentiationMethod:
+        workspace.numerical.differentiationMethod === "five-point" ? "five-point" : "central",
+      integrationMethod:
+        workspace.numerical.integrationMethod === "trapezoidal" ? "trapezoidal" : "simpson",
       point: workspace.numerical.point,
       intervalStart: workspace.numerical.intervalStart,
       intervalEnd: workspace.numerical.intervalEnd

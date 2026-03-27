@@ -1,0 +1,98 @@
+.numerical-workspace {
+  margin-top: 0;
+}
+
+.numerical-workspace .numerical-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.92fr);
+  gap: 24px;
+}
+
+.numerical-workspace .numerical-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.numerical-workspace .numerical-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.numerical-workspace .numerical-meta-strip span {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(147, 177, 212, 0.18);
+  background: rgba(11, 20, 34, 0.62);
+  color: #9fb4ce;
+  font-size: 0.84rem;
+}
+
+.numerical-workspace .result-card {
+  padding: 24px;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(76, 168, 148, 0.18), transparent 30%),
+    linear-gradient(180deg, rgba(15, 30, 48, 0.96), rgba(9, 20, 34, 0.98));
+  border: 1px solid rgba(126, 205, 188, 0.22);
+}
+
+.numerical-workspace .result-label,
+.numerical-workspace .result-box span,
+.numerical-workspace .issue strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #8fa6c1;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.numerical-workspace .result-value {
+  display: block;
+  margin: 10px 0 12px;
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  line-height: 1.05;
+  word-break: break-word;
+}
+
+.numerical-workspace .result-meta {
+  margin: 0;
+  color: #aebcd0;
+}
+
+.numerical-workspace .numerical-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.numerical-workspace .result-box,
+.numerical-workspace .issue {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(11, 20, 34, 0.78);
+  border: 1px solid rgba(180, 194, 214, 0.12);
+}
+
+.numerical-workspace .issue-list {
+  display: grid;
+  gap: 12px;
+}
+
+.numerical-workspace .issue {
+  display: grid;
+  gap: 4px;
+}
+
+.numerical-workspace .issue-error {
+  border-color: rgba(243, 118, 118, 0.38);
+  background: rgba(48, 17, 24, 0.9);
+}
+
+@media (max-width: 900px) {
+  .numerical-workspace .numerical-layout,
+  .numerical-workspace .numerical-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
