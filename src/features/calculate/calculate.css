@@ -1,0 +1,121 @@
+.calculator-panel {
+  margin-top: 24px;
+}
+
+.calculator-panel .calculator-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);
+  gap: 24px;
+}
+
+.calculator-panel .stack {
+  display: grid;
+  gap: 18px;
+}
+
+.calculator-panel .field-block {
+  display: grid;
+  gap: 8px;
+}
+
+.calculator-panel .field-label,
+.calculator-panel .result-label {
+  color: #8fa6c1;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.calculator-panel .expression-input,
+.calculator-panel .field-control {
+  width: 100%;
+  border: 1px solid rgba(162, 183, 210, 0.16);
+  border-radius: 16px;
+  background: rgba(7, 16, 28, 0.88);
+  color: inherit;
+  padding: 14px 16px;
+}
+
+.calculator-panel .expression-input {
+  resize: vertical;
+  min-height: 124px;
+}
+
+.calculator-panel .settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.calculator-panel .result-card {
+  padding: 24px;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(80, 149, 226, 0.2), transparent 34%),
+    linear-gradient(180deg, rgba(15, 30, 48, 0.96), rgba(9, 20, 34, 0.98));
+  border: 1px solid rgba(144, 184, 230, 0.24);
+}
+
+.calculator-panel .result-value {
+  display: block;
+  margin: 10px 0 12px;
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  line-height: 1.05;
+  word-break: break-word;
+}
+
+.calculator-panel .result-meta {
+  margin: 0;
+  color: #aebcd0;
+}
+
+.calculator-panel .result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.calculator-panel .result-box,
+.calculator-panel .issue {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(11, 20, 34, 0.78);
+  border: 1px solid rgba(180, 194, 214, 0.12);
+}
+
+.calculator-panel .result-box span,
+.calculator-panel .issue strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #8fa6c1;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.calculator-panel .issue-list {
+  display: grid;
+  gap: 12px;
+}
+
+.calculator-panel .issue {
+  display: grid;
+  gap: 4px;
+}
+
+.calculator-panel .issue-error {
+  border-color: rgba(243, 118, 118, 0.38);
+  background: rgba(48, 17, 24, 0.9);
+}
+
+.calculator-panel .issue-neutral {
+  border-color: rgba(118, 179, 243, 0.24);
+}
+
+@media (max-width: 900px) {
+  .calculator-panel .calculator-layout,
+  .calculator-panel .settings-grid,
+  .calculator-panel .result-grid {
+    grid-template-columns: 1fr;
+  }
+}

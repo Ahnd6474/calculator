@@ -1,5 +1,12 @@
-import { useMemo, useState } from "react";
-import type { CalculatorSettings, MatrixData, WorkspaceState, WorkspaceToolId } from "@core/contracts";
+import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import type {
+  CalculatorSettings,
+  ExpressionResult,
+  MatrixData,
+  ResultEnvelope,
+  WorkspaceState,
+  WorkspaceToolId
+} from "@core/contracts";
 import {
   HISTORY_SCHEMA_VERSION,
   MEMORY_SCHEMA_VERSION,
@@ -8,7 +15,6 @@ import {
 } from "@persistence/schema";
 import { createCalculatorPersistence, getBrowserStorage } from "@persistence/store";
 import { ResultPanel } from "../components/results/ResultPanel";
-import { createHistoryEntry, captureRegister, summarizeWorkspace } from "./workspacePreview";
 import { createDefaultMemoryRegisters, type MemoryRegister } from "../features/memory/model";
 import {
   ANGLE_MODE_OPTIONS,
@@ -16,9 +22,13 @@ import {
   DISPLAY_MODE_OPTIONS,
   SETTINGS_LIMITS
 } from "../features/settings/model";
+import { createCalculationService } from "../services/calculate";
 import { createDefaultMatrixData, resizeMatrix, updateMatrixCell } from "./workspaceDrafts";
+import { buildModeMetadata, summarizeWorkspace, type WorkspacePresentation } from "./workspacePreview";
+import "../features/calculate/calculate.css";
 
 const HISTORY_LIMIT = 24;
+const calculationService = createCalculationService();
 
 const toolTitles: Record<WorkspaceToolId, string> = {
   calculate: "Expression Engine",
@@ -26,6 +36,8 @@ const toolTitles: Record<WorkspaceToolId, string> = {
   solver: "Root Solver",
   numerical: "Numerical Tools"
 };
+
+type CalculationOutcome = ResultEnvelope<ExpressionResult> | null;
 
 function formatTimestamp(value: string | null, locale: string): string {
   if (!value) {
@@ -57,6 +69,61 @@ function clampNumberField(value: number, minimum: number, maximum: number): numb
 
 function buildMatrix(matrix?: MatrixData): MatrixData {
   return matrix ?? createDefaultMatrixData();
+}
+
+function formatApproximation(value: number | null): string {
+  if (value === null) {
+    return "n/a";
+  }
+
+  return Number.isFinite(value) ? value.toPrecision(12) : String(value);
+}
+
+function formatElapsedMs(value: number | undefined): string {
+  if (value === undefined) {
+    return "n/a";
+  }
+
+  return `${value.toFixed(3)} ms`;
+}
+
+function buildCalculationPresentation(
+  workspace: WorkspaceState,
+  calculation: CalculationOutcome
+): WorkspacePresentation {
+  const expression = workspace.expressionInput.trim();
+
+  if (!expression) {
+    return summarizeWorkspace(workspace);
+  }
+
+  if (!calculation) {
+    return {
+      tool: "calculate",
+      title: "Expression Runtime",
+      detail: expression,
+      value: "Calculating",
+      issues: []
+    };
+  }
+
+  if (!calculation.ok) {
+    return {
+      tool: "calculate",
+      title: "Expression Diagnostic",
+      detail: expression,
+      value: "Error",
+      issues: calculation.issues
+    };
+  }
+
+  return {
+    tool: "calculate",
+    title: "Computed Result",
+    detail: `${calculation.value.canonicalExpression} | Approximation ${formatApproximation(calculation.value.approximateValue)}`,
+    value: calculation.value.formattedValue,
+    issues: calculation.issues
+  };
 }
 
 interface MatrixEditorProps {
@@ -111,33 +178,109 @@ function MatrixEditor({ label, matrix, onResize, onCellChange }: MatrixEditorPro
   );
 }
 
+interface CalculateDraftProps {
+  calculation: CalculationOutcome;
+  workspace: WorkspaceState;
+  onExpressionChange: (expression: string) => void;
+}
+
+function CalculateDraft({ calculation, workspace, onExpressionChange }: CalculateDraftProps) {
+  const expressionInput = workspace.expressionInput;
+
+  return (
+    <section className="panel calculator-panel">
+      <header className="panel-header">
+        <h2>Expression Engine</h2>
+        <span>live parser + runtime</span>
+      </header>
+      <div className="calculator-layout">
+        <div className="stack">
+          <label className="field-block">
+            <span className="field-label">Expression</span>
+            <textarea
+              className="expression-input"
+              rows={6}
+              value={expressionInput}
+              onChange={(event) => onExpressionChange(event.target.value)}
+              placeholder="sin(pi / 3)^2 + cos(pi / 3)^2"
+            />
+          </label>
+        </div>
+
+        <div className="stack">
+          <div className="result-card">
+            <p className="result-label">Formatted result</p>
+            <output className="result-value">
+              {calculation?.ok ? calculation.value.formattedValue : expressionInput.trim() ? "Error" : "Ready"}
+            </output>
+            <p className="result-meta">
+              {calculation?.ok
+                ? `Approximation ${formatApproximation(calculation.value.approximateValue)}`
+                : "Live diagnostics update as the expression changes."}
+            </p>
+          </div>
+
+          <div className="result-grid">
+            <div className="result-box">
+              <span>Canonical</span>
+              <strong>{calculation?.ok ? calculation.value.canonicalExpression : "n/a"}</strong>
+            </div>
+            <div className="result-box">
+              <span>Elapsed</span>
+              <strong>{formatElapsedMs(calculation?.metadata.elapsedMs)}</strong>
+            </div>
+            <div className="result-box">
+              <span>Backend</span>
+              <strong>{calculation?.metadata.backend ?? "n/a"}</strong>
+            </div>
+            <div className="result-box">
+              <span>Status</span>
+              <strong>{calculation?.ok ? "ok" : calculation ? "diagnostic" : "idle"}</strong>
+            </div>
+          </div>
+
+          <div className="issue-list">
+            {(calculation?.issues ?? []).length > 0 ? (
+              (calculation?.issues ?? []).map((issue) => (
+                <div
+                  className={issue.severity === "error" ? "issue issue-error" : "issue"}
+                  key={`${issue.code}-${issue.message}`}
+                >
+                  <strong>{issue.code}</strong>
+                  <span>{issue.message}</span>
+                </div>
+              ))
+            ) : (
+              <div className="issue issue-neutral">
+                <strong>Examples</strong>
+                <span>Try `sin(pi/3)^2 + cos(pi/3)^2`, `sqrt(2)^2 - 2`, or `sin(90)` in degree mode.</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function renderToolDraft(
   workspace: WorkspaceState,
+  calculation: CalculationOutcome,
   updateWorkspace: (recipe: (current: WorkspaceState) => WorkspaceState) => void
 ) {
   switch (workspace.activeTool) {
     case "calculate":
       return (
-        <section className="panel draft-panel">
-          <header className="panel-header">
-            <h2>Expression Workspace</h2>
-            <span>restored draft</span>
-          </header>
-          <label className="field">
-            <span>Expression</span>
-            <textarea
-              rows={6}
-              value={workspace.expressionInput}
-              onChange={(event) =>
-                updateWorkspace((current) => ({
-                  ...current,
-                  expressionInput: event.target.value
-                }))
-              }
-              placeholder="sin(pi / 3)^2 + cos(pi / 3)^2"
-            />
-          </label>
-        </section>
+        <CalculateDraft
+          calculation={calculation}
+          workspace={workspace}
+          onExpressionChange={(expressionInput) =>
+            updateWorkspace((current) => ({
+              ...current,
+              expressionInput
+            }))
+          }
+        />
       );
     case "matrix":
       return (
@@ -397,11 +540,53 @@ export function App() {
   const [selectedRegisterId, setSelectedRegisterId] = useState(
     () => snapshot.memory.payload.registers[0]?.id ?? createDefaultMemoryRegisters()[0]!.id
   );
+  const [calculation, setCalculation] = useState<CalculationOutcome>(null);
+  const deferredExpression = useDeferredValue(workspace.expressionInput);
+  const deferredSettings = useDeferredValue(settings);
 
   const activeTool = workspace.activeTool;
-  const presentation = summarizeWorkspace(workspace);
+  const presentation =
+    activeTool === "calculate" ? buildCalculationPresentation(workspace, calculation) : summarizeWorkspace(workspace);
   const selectedRegister =
     memoryRegisters.find((register) => register.id === selectedRegisterId) ?? memoryRegisters[0] ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (activeTool !== "calculate") {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!deferredExpression.trim()) {
+      startTransition(() => {
+        setCalculation(null);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    Promise.resolve(
+      calculationService.calculate({
+        expression: deferredExpression,
+        settings: deferredSettings
+      })
+    ).then((result) => {
+      if (cancelled) {
+        return;
+      }
+
+      startTransition(() => {
+        setCalculation(result);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTool, deferredExpression, deferredSettings]);
 
   function updateSettings(recipe: (current: CalculatorSettings) => CalculatorSettings) {
     setSettingsState((current) => {
@@ -431,8 +616,18 @@ export function App() {
 
   function storeCurrentSnapshot() {
     const timestamp = new Date().toISOString();
-    const entry = createHistoryEntry(workspace, settings, timestamp, `history-${timestamp}`);
-    replaceHistory([entry, ...historyEntries].slice(0, HISTORY_LIMIT));
+    replaceHistory([
+      {
+        id: `history-${timestamp}`,
+        tool: presentation.tool,
+        title: presentation.title,
+        detail: presentation.detail,
+        value: presentation.value,
+        createdAt: timestamp,
+        mode: buildModeMetadata(settings)
+      },
+      ...historyEntries
+    ].slice(0, HISTORY_LIMIT));
   }
 
   function saveToSelectedRegister() {
@@ -443,7 +638,16 @@ export function App() {
     const timestamp = new Date().toISOString();
     replaceMemory(
       memoryRegisters.map((register) =>
-        register.id === selectedRegister.id ? captureRegister(register, workspace, settings, timestamp) : register
+        register.id === selectedRegister.id
+          ? {
+              ...register,
+              value: presentation.value,
+              detail: presentation.detail,
+              sourceTool: presentation.tool,
+              updatedAt: timestamp,
+              mode: buildModeMetadata(settings)
+            }
+          : register
       )
     );
   }
@@ -475,8 +679,8 @@ export function App() {
         <p className="eyebrow">Precision Scientific Calculator</p>
         <h1>Persistent engineering workspace</h1>
         <p className="lede">
-          Tabs, numerical settings, memory, and history now share a versioned workspace store so the product
-          shell survives restarts before engine nodes land.
+          Tabs, numerical settings, memory, and history now share a versioned workspace store while the
+          expression engine runs live inside the calculate mode.
         </p>
       </section>
 
@@ -508,7 +712,7 @@ export function App() {
       </section>
 
       <section className="workspace-grid">
-        <div className="workspace-main">{renderToolDraft(workspace, updateWorkspace)}</div>
+        <div className="workspace-main">{renderToolDraft(workspace, calculation, updateWorkspace)}</div>
         <aside className="workspace-side">
           <section className="panel settings-panel">
             <header className="panel-header">
@@ -711,7 +915,11 @@ export function App() {
             { label: "Backend", value: settings.numeric.backend },
             { label: "Angle", value: settings.numeric.angleMode },
             { label: "Display", value: settings.numeric.displayMode },
-            { label: "Precision", value: `${settings.numeric.displayPrecision} digits` }
+            { label: "Precision", value: `${settings.numeric.displayPrecision} digits` },
+            {
+              label: "Elapsed",
+              value: activeTool === "calculate" ? formatElapsedMs(calculation?.metadata.elapsedMs) : "n/a"
+            }
           ]}
         >
           <button type="button" className="secondary-button" onClick={storeCurrentSnapshot}>
@@ -754,7 +962,11 @@ export function App() {
                 </div>
                 <div>
                   <dt>Mode</dt>
-                  <dd>{selectedRegister.mode ? `${selectedRegister.mode.angleMode} / ${selectedRegister.mode.displayMode}` : "N/A"}</dd>
+                  <dd>
+                    {selectedRegister.mode
+                      ? `${selectedRegister.mode.angleMode} / ${selectedRegister.mode.displayMode}`
+                      : "N/A"}
+                  </dd>
                 </div>
                 <div>
                   <dt>Backend</dt>
