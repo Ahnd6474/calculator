@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import type {
   CalculatorSettings,
   ComputationIssue,
@@ -10,16 +10,21 @@ import type {
   ResultEnvelope
 } from "@core/contracts";
 import { MAX_MATRIX_SIZE } from "@core/matrix";
+import { createDefaultWorkspaceState } from "../../app/workspaceDrafts";
 import { createMatrixService } from "../../services/matrix";
 
 type MatrixAction = MatrixOperation | "solve";
 
 interface MatrixWorkbenchProps {
   settings: CalculatorSettings;
-  initialDraft: MatrixDraft;
+  draft: MatrixDraft;
+  result: ResultEnvelope<MatrixOperationResult | LinearSystemResult> | null;
+  onDraftChange(recipe: (current: MatrixDraft) => MatrixDraft): void;
+  onResultChange: Dispatch<SetStateAction<ResultEnvelope<MatrixOperationResult | LinearSystemResult> | null>>;
 }
 
 const matrixService = createMatrixService();
+const defaultDraft = createDefaultWorkspaceState().matrix;
 
 const actionLabels: Record<MatrixAction, string> = {
   add: "Add",
@@ -33,30 +38,59 @@ const actionLabels: Record<MatrixAction, string> = {
 
 const binaryActions: MatrixAction[] = ["add", "subtract", "multiply"];
 
-export function MatrixWorkbench({ settings, initialDraft }: MatrixWorkbenchProps) {
+export function MatrixWorkbench({
+  settings,
+  draft,
+  result,
+  onDraftChange,
+  onResultChange
+}: MatrixWorkbenchProps) {
   const [action, setAction] = useState<MatrixAction>("solve");
-  const [leftSize, setLeftSize] = useState({ rows: initialDraft.left.rows, columns: initialDraft.left.columns });
+  const [leftSize, setLeftSize] = useState({ rows: draft.left.rows, columns: draft.left.columns });
   const [rightSize, setRightSize] = useState({
-    rows: initialDraft.right?.rows ?? initialDraft.left.rows,
-    columns: initialDraft.right?.columns ?? initialDraft.left.columns
+    rows: draft.right?.rows ?? draft.left.rows,
+    columns: draft.right?.columns ?? draft.left.columns
   });
-  const [leftValues, setLeftValues] = useState(() => toDraftValues(initialDraft.left));
-  const [rightValues, setRightValues] = useState(() => toDraftValues(initialDraft.right ?? initialDraft.left));
-  const [rightHandSide, setRightHandSide] = useState(() => createVectorDraft(initialDraft.left.rows));
-  const [result, setResult] = useState<ResultEnvelope<MatrixOperationResult | LinearSystemResult> | null>(null);
+  const [leftValues, setLeftValues] = useState(() => toDraftValues(draft.left));
+  const [rightValues, setRightValues] = useState(() => toDraftValues(draft.right ?? draft.left));
+  const [rightHandSide, setRightHandSide] = useState(() => createVectorDraft(draft.left.rows));
 
   const usesRightMatrix = binaryActions.includes(action);
   const usesRightHandSide = action === "solve";
 
+  useEffect(() => {
+    setLeftSize({ rows: draft.left.rows, columns: draft.left.columns });
+    setRightSize({
+      rows: draft.right?.rows ?? draft.left.rows,
+      columns: draft.right?.columns ?? draft.left.columns
+    });
+    setLeftValues(toDraftValues(draft.left));
+    setRightValues(toDraftValues(draft.right ?? draft.left));
+  }, [draft]);
+
+  useEffect(() => {
+    onResultChange(null);
+  }, [action, leftSize, leftValues, onResultChange, rightHandSide, rightSize, rightValues, settings]);
+
   function updateLeftSize(nextRows: number, nextColumns: number) {
+    const nextValues = resizeDraftMatrix(leftValues, nextRows, nextColumns);
     setLeftSize({ rows: nextRows, columns: nextColumns });
-    setLeftValues((current) => resizeDraftMatrix(current, nextRows, nextColumns));
+    setLeftValues(nextValues);
     setRightHandSide((current) => resizeDraftVector(current, nextRows));
+    onDraftChange((current) => ({
+      ...current,
+      left: toPersistedMatrix(nextValues, nextRows, nextColumns)
+    }));
   }
 
   function updateRightSize(nextRows: number, nextColumns: number) {
+    const nextValues = resizeDraftMatrix(rightValues, nextRows, nextColumns);
     setRightSize({ rows: nextRows, columns: nextColumns });
-    setRightValues((current) => resizeDraftMatrix(current, nextRows, nextColumns));
+    setRightValues(nextValues);
+    onDraftChange((current) => ({
+      ...current,
+      right: toPersistedMatrix(nextValues, nextRows, nextColumns)
+    }));
   }
 
   function submit() {
@@ -65,28 +99,29 @@ export function MatrixWorkbench({ settings, initialDraft }: MatrixWorkbenchProps
       const vector = parseVectorDraft(rightHandSide, leftSize.rows);
 
       if (!coefficientMatrix.ok) {
-        setResult(failEnvelope(settings, [coefficientMatrix.issue]));
+        onResultChange(failEnvelope(settings, [coefficientMatrix.issue]));
         return;
       }
 
       if (!vector.ok) {
-        setResult(failEnvelope(settings, [vector.issue]));
+        onResultChange(failEnvelope(settings, [vector.issue]));
         return;
       }
 
+      const startedAt = nowMs();
       void Promise.resolve(
         matrixService.solveLinearSystem({
           matrix: coefficientMatrix.value,
           rightHandSide: vector.value,
           settings
         })
-      ).then((response) => setResult(response));
+      ).then((response) => onResultChange(withElapsedMetadata(response, startedAt)));
       return;
     }
 
     const leftMatrix = parseMatrixDraft(leftValues, leftSize.rows, leftSize.columns);
     if (!leftMatrix.ok) {
-      setResult(failEnvelope(settings, [leftMatrix.issue]));
+      onResultChange(failEnvelope(settings, [leftMatrix.issue]));
       return;
     }
 
@@ -95,7 +130,7 @@ export function MatrixWorkbench({ settings, initialDraft }: MatrixWorkbenchProps
       : null;
 
     if (rightMatrix !== null && !rightMatrix.ok) {
-      setResult(failEnvelope(settings, [rightMatrix.issue]));
+      onResultChange(failEnvelope(settings, [rightMatrix.issue]));
       return;
     }
 
@@ -113,19 +148,24 @@ export function MatrixWorkbench({ settings, initialDraft }: MatrixWorkbenchProps
             settings
           };
 
-    void Promise.resolve(matrixService.evaluate(request)).then((response) => setResult(response));
+    const startedAt = nowMs();
+    void Promise.resolve(matrixService.evaluate(request)).then((response) =>
+      onResultChange(withElapsedMetadata(response, startedAt))
+    );
   }
 
   function resetDrafts() {
-    setLeftSize({ rows: initialDraft.left.rows, columns: initialDraft.left.columns });
+    setAction("solve");
+    setLeftSize({ rows: defaultDraft.left.rows, columns: defaultDraft.left.columns });
     setRightSize({
-      rows: initialDraft.right?.rows ?? initialDraft.left.rows,
-      columns: initialDraft.right?.columns ?? initialDraft.left.columns
+      rows: defaultDraft.right?.rows ?? defaultDraft.left.rows,
+      columns: defaultDraft.right?.columns ?? defaultDraft.left.columns
     });
-    setLeftValues(toDraftValues(initialDraft.left));
-    setRightValues(toDraftValues(initialDraft.right ?? initialDraft.left));
-    setRightHandSide(createVectorDraft(initialDraft.left.rows));
-    setResult(null);
+    setLeftValues(toDraftValues(defaultDraft.left));
+    setRightValues(toDraftValues(defaultDraft.right ?? defaultDraft.left));
+    setRightHandSide(createVectorDraft(defaultDraft.left.rows));
+    onDraftChange(() => defaultDraft);
+    onResultChange(null);
   }
 
   return (
@@ -172,7 +212,16 @@ export function MatrixWorkbench({ settings, initialDraft }: MatrixWorkbenchProps
           size={leftSize}
           values={leftValues}
           onSizeChange={updateLeftSize}
-          onValuesChange={setLeftValues}
+          onValuesChange={(nextValues) => {
+            setLeftValues(nextValues);
+            const nextMatrix = toPersistedMatrixOrNull(nextValues, leftSize.rows, leftSize.columns);
+            if (nextMatrix) {
+              onDraftChange((current) => ({
+                ...current,
+                left: nextMatrix
+              }));
+            }
+          }}
         />
 
         {usesRightMatrix ? (
@@ -181,7 +230,16 @@ export function MatrixWorkbench({ settings, initialDraft }: MatrixWorkbenchProps
             size={rightSize}
             values={rightValues}
             onSizeChange={updateRightSize}
-            onValuesChange={setRightValues}
+            onValuesChange={(nextValues) => {
+              setRightValues(nextValues);
+              const nextMatrix = toPersistedMatrixOrNull(nextValues, rightSize.rows, rightSize.columns);
+              if (nextMatrix) {
+                onDraftChange((current) => ({
+                  ...current,
+                  right: nextMatrix
+                }));
+              }
+            }}
           />
         ) : usesRightHandSide ? (
           <VectorEditor values={rightHandSide} onValuesChange={setRightHandSide} />
@@ -552,6 +610,62 @@ function failEnvelope(
     issues,
     metadata: {
       backend: settings.numeric.backend
+    }
+  };
+}
+
+function toPersistedMatrix(values: string[][], rows: number, columns: number): MatrixData {
+  return {
+    rows,
+    columns,
+    values: values.slice(0, rows).map((row) =>
+      Array.from({ length: columns }, (_, columnIndex) => {
+        const rawValue = row?.[columnIndex]?.trim() ?? "";
+        const parsedValue = Number(rawValue);
+        return Number.isFinite(parsedValue) ? parsedValue : 0;
+      })
+    )
+  };
+}
+
+function toPersistedMatrixOrNull(values: string[][], rows: number, columns: number): MatrixData | null {
+  const parsedValues = values.slice(0, rows).map((row) =>
+    Array.from({ length: columns }, (_, columnIndex) => {
+      const rawValue = row?.[columnIndex]?.trim() ?? "";
+      if (rawValue.length === 0) {
+        return null;
+      }
+
+      const parsedValue = Number(rawValue);
+      return Number.isFinite(parsedValue) ? parsedValue : null;
+    })
+  );
+
+  if (parsedValues.some((row) => row.some((value) => value === null))) {
+    return null;
+  }
+
+  return {
+    rows,
+    columns,
+    values: parsedValues as number[][]
+  };
+}
+
+function nowMs(): number {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+
+  return Date.now();
+}
+
+function withElapsedMetadata<T>(result: ResultEnvelope<T>, startedAt: number): ResultEnvelope<T> {
+  return {
+    ...result,
+    metadata: {
+      ...result.metadata,
+      elapsedMs: Math.max(0, nowMs() - startedAt)
     }
   };
 }

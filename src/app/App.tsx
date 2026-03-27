@@ -11,6 +11,9 @@ import type {
   CalculatorSettings,
   ComputationIssue,
   ExpressionResult,
+  LinearSystemResult,
+  MatrixData,
+  MatrixOperationResult,
   NumericalDraft,
   NumericalRequest,
   NumericalResult,
@@ -55,6 +58,7 @@ const toolTitles: Record<WorkspaceToolId, string> = {
 };
 
 type CalculationOutcome = ResultEnvelope<ExpressionResult> | null;
+type MatrixOutcome = ResultEnvelope<MatrixOperationResult | LinearSystemResult> | null;
 type SolverOutcome = ResultEnvelope<SolverResult> | null;
 type NumericalOutcome = ResultEnvelope<NumericalResult> | null;
 
@@ -153,6 +157,63 @@ function buildSolverPresentation(
     detail: summary.detail,
     value: summary.value,
     issues: summary.issues
+  };
+}
+
+function buildMatrixPresentation(
+  settings: CalculatorSettings,
+  workspace: WorkspaceState,
+  result: MatrixOutcome
+): WorkspacePresentation {
+  if (!result) {
+    return summarizeWorkspace(workspace);
+  }
+
+  const dimensions = `Left ${workspace.matrix.left.rows} x ${workspace.matrix.left.columns} / Right ${workspace.matrix.right?.rows ?? 2} x ${workspace.matrix.right?.columns ?? 2}`;
+
+  if (!result.ok) {
+    return {
+      tool: "matrix",
+      title: "Matrix Diagnostic",
+      detail: dimensions,
+      value: "Error",
+      issues: result.issues
+    };
+  }
+
+  if ("solution" in result.value) {
+    return {
+      tool: "matrix",
+      title: "Linear System Solution",
+      detail: [
+        `${result.value.solution.length} unknowns`,
+        `Residual ${formatOptionalCompact(result.value.residualNorm, settings.numeric.displayPrecision)}`,
+        `Pivot ${result.value.diagnostics?.pivotStrategy ?? "n/a"}`
+      ].join(" | "),
+      value: formatVectorSummary(result.value.solution, settings.numeric.displayPrecision),
+      issues: result.issues
+    };
+  }
+
+  return {
+    tool: "matrix",
+    title: labelMatrixTitle(result.value.operation),
+    detail: [
+      result.value.matrix
+        ? `${result.value.matrix.rows} x ${result.value.matrix.columns} matrix`
+        : "Scalar output",
+      result.value.diagnostics?.pivotStrategy ? `Pivot ${result.value.diagnostics.pivotStrategy}` : null,
+      result.value.diagnostics?.conditionEstimate !== undefined
+        ? `Cond ${formatCompactNumber(result.value.diagnostics.conditionEstimate, settings.numeric.displayPrecision)}`
+        : null
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" | "),
+    value:
+      result.value.scalar ??
+      formatMatrixSummary(result.value.matrix, settings.numeric.displayPrecision) ??
+      "Computed",
+    issues: result.issues
   };
 }
 
@@ -285,8 +346,10 @@ function renderToolDraft(
   settings: CalculatorSettings,
   workspace: WorkspaceState,
   calculation: CalculationOutcome,
+  matrix: MatrixOutcome,
   numerical: NumericalOutcome,
   updateWorkspace: (recipe: (current: WorkspaceState) => WorkspaceState) => void,
+  updateMatrixCalculation: Dispatch<SetStateAction<MatrixOutcome>>,
   updateSolverCalculation: Dispatch<SetStateAction<SolverOutcome>>
 ) {
   switch (workspace.activeTool) {
@@ -304,7 +367,20 @@ function renderToolDraft(
         />
       );
     case "matrix":
-      return <MatrixWorkbench settings={settings} initialDraft={workspace.matrix} />;
+      return (
+        <MatrixWorkbench
+          settings={settings}
+          draft={workspace.matrix}
+          result={matrix}
+          onDraftChange={(recipe) =>
+            updateWorkspace((current) => ({
+              ...current,
+              matrix: recipe(current.matrix)
+            }))
+          }
+          onResultChange={updateMatrixCalculation}
+        />
+      );
     case "solver":
       return (
         <SolverWorkbench
@@ -349,6 +425,7 @@ export function App() {
     () => snapshot.memory.payload.registers[0]?.id ?? createDefaultMemoryRegisters()[0]!.id
   );
   const [calculation, setCalculation] = useState<CalculationOutcome>(null);
+  const [matrixCalculation, setMatrixCalculation] = useState<MatrixOutcome>(null);
   const [solverCalculation, setSolverCalculation] = useState<SolverOutcome>(null);
   const [numerical, setNumerical] = useState<NumericalOutcome>(null);
   const deferredExpression = useDeferredValue(workspace.expressionInput);
@@ -359,6 +436,8 @@ export function App() {
   const presentation =
     activeTool === "calculate"
       ? buildCalculationPresentation(workspace, calculation)
+      : activeTool === "matrix"
+        ? buildMatrixPresentation(settings, workspace, matrixCalculation)
       : activeTool === "solver"
         ? buildSolverPresentation(workspace, solverCalculation)
       : activeTool === "numerical"
@@ -573,7 +652,16 @@ export function App() {
 
       <section className="workspace-grid">
         <div className="workspace-main">
-          {renderToolDraft(settings, workspace, calculation, numerical, updateWorkspace, setSolverCalculation)}
+          {renderToolDraft(
+            settings,
+            workspace,
+            calculation,
+            matrixCalculation,
+            numerical,
+            updateWorkspace,
+            setMatrixCalculation,
+            setSolverCalculation
+          )}
         </div>
         <aside className="workspace-side">
           <section className="panel settings-panel">
@@ -783,6 +871,8 @@ export function App() {
               value:
                 activeTool === "calculate"
                   ? formatElapsedMs(calculation?.metadata.elapsedMs)
+                  : activeTool === "matrix"
+                    ? formatElapsedMs(matrixCalculation?.metadata.elapsedMs)
                   : activeTool === "solver"
                     ? formatElapsedMs(solverCalculation?.metadata.elapsedMs)
                   : activeTool === "numerical"
@@ -979,4 +1069,52 @@ function labelNumericalMethod(method: NumericalResult["method"]): string {
     case "simpson":
       return "Simpson";
   }
+}
+
+function labelMatrixTitle(operation: MatrixOperationResult["operation"]): string {
+  switch (operation) {
+    case "add":
+      return "Matrix Addition";
+    case "subtract":
+      return "Matrix Subtraction";
+    case "multiply":
+      return "Matrix Product";
+    case "transpose":
+      return "Matrix Transpose";
+    case "determinant":
+      return "Matrix Determinant";
+    case "inverse":
+      return "Matrix Inverse";
+  }
+}
+
+function formatMatrixSummary(matrix: MatrixData | undefined, precision: number): string | null {
+  if (!matrix) {
+    return null;
+  }
+
+  return matrix.values
+    .map((row) => `[${row.map((value) => formatCompactNumber(value, precision)).join(", ")}]`)
+    .join(" ");
+}
+
+function formatVectorSummary(values: number[], precision: number): string {
+  return values.map((value, index) => `x${index + 1} = ${formatCompactNumber(value, precision)}`).join(", ");
+}
+
+function formatOptionalCompact(value: number | undefined, precision: number): string {
+  return value === undefined ? "n/a" : formatCompactNumber(value, precision);
+}
+
+function formatCompactNumber(value: number, precision: number): string {
+  if (!Number.isFinite(value)) {
+    return String(value);
+  }
+
+  const normalized = Object.is(value, -0) ? 0 : value;
+  if (normalized === 0) {
+    return "0";
+  }
+
+  return Number.parseFloat(normalized.toPrecision(Math.min(Math.max(precision, 2), 12))).toString();
 }
